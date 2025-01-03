@@ -68,3 +68,6 @@ project/**/metals.sbt
 
 .bsp
 .history
+
+# kafka
+data/checkpoints
