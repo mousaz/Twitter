@@ -27,7 +27,7 @@ class MongoDBClient {
   async runQuery(query) {
     try {
       logger.log(`Running query: ${JSON.stringify(query)}`);
-      return await this.#collection.find(query).toArray();
+      return await this.#collection.aggregate(query).toArray();
     } catch (err) {
       logger.error(`Failed to run query. Error: ${err}`);
       return [];
