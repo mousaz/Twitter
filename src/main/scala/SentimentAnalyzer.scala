@@ -7,11 +7,33 @@ import scala.jdk.CollectionConverters._
 import edu.stanford.nlp.neural.rnn.RNNCoreAnnotations
 import edu.stanford.nlp.sentiment.SentimentCoreAnnotations
 
+/**
+  * Sentiment Analyzer based on the Stanford CoreNLP library
+  * Reference: https://stanfordnlp.github.io/CoreNLP/index.html
+  */
 class SentimentAnalyzer extends Serializable {
-  val props = new Properties()
-  props.setProperty("annotators", "tokenize, ssplit, parse, sentiment")
-  @transient lazy val pipeline = new StanfordCoreNLP(props)
 
+  /**
+    * Configure the properties of the pipeline and the needed annotators.
+    * For full reference regarding the annotators see: https://stanfordnlp.github.io/CoreNLP/annotators.html
+    * 
+    * Annotators used in the pipeline are:
+    * - tokenize: Splits the text into words.
+    * - ssplit: Creates sentences from the tokens.
+    * - parse: Provides full syntactic analysis.
+    * - sentiment: Annotates sentences with the predicted sentiment.
+    */
+  private val props = new Properties()
+  props.setProperty("annotators", "tokenize, ssplit, parse, sentiment")
+  @transient lazy private val pipeline = new StanfordCoreNLP(props)
+
+  /**
+    * Extracts the sentiment from the provided text.
+    * If the text has multiple sentences then it returns the max sentiment.
+    *
+    * @param text The text to analyze
+    * @return -1 for negative, 0 for neutral, and 1 for positive
+    */
   def extractSentiment(text: String): Int = {
     val annotation = pipeline.process(text)
     val sentences = annotation.get(classOf[CoreAnnotations.SentencesAnnotation]).asScala.toSeq

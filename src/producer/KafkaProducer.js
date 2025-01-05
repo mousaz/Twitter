@@ -1,6 +1,6 @@
 const Kafka = require("@confluentinc/kafka-javascript");
 
-const logger = require("./logger").createLogger("KafkaProducer:");
+const logger = require("../jscommon/logger").createLogger("KafkaProducer:");
 
 class KafkaProducer {
   #config = null;
@@ -10,13 +10,6 @@ class KafkaProducer {
   constructor(config, onDeliveryReport) {
     this.#config = config ?? {
       "bootstrap.servers": process.env.BOOTSTRAP_SERVERS,
-      // "sasl.username": process.env.CLUSTER_API_KEY,
-      // "sasl.password": process.env.CLUSTER_API_SECRET,
-      // Fixed properties
-      // "security.protocol": "SASL_SSL",
-      // "sasl.mechanisms": "PLAIN",
-      // acks: "all",
-
       // Needed for delivery callback to be invoked
       dr_msg_cb: true,
 

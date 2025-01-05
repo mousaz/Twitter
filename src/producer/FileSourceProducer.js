@@ -4,7 +4,9 @@ const KafkaProducer = require("./KafkaProducer");
 
 require("dotenv").config();
 
-const logger = require("./logger").createLogger("FileSourceProducer:");
+const logger = require("../jscommon/logger").createLogger(
+  "FileSourceProducer:"
+);
 
 const FILE_LINES_BUFF_SIZE = process.env.FILE_LINES_BUFF_SIZE || 10;
 const FILE_DELAY_BETWEEN_READS = process.env.FILE_DELAY_BETWEEN_READS || 500;
@@ -36,6 +38,7 @@ function startConsumingFile() {
     terminal: false,
   });
 
+  let totalReadItems = 0;
   let linesBuff = [];
 
   file.on("line", (line) => {
@@ -50,10 +53,13 @@ function startConsumingFile() {
 
     logger.log(`Read line: ${line}`);
     linesBuff.push(line);
+    totalReadItems++;
   });
 
   file.on("close", () => {
-    logger.log("Read all content of the file > Exiting producer.");
+    logger.log(
+      `Read all content [${totalReadItems} lines] of the file > Exiting producer.`
+    );
     process.exit();
   });
 }

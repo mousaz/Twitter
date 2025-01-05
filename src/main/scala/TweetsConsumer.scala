@@ -17,12 +17,20 @@ import edu.stanford.nlp.ling.CoreAnnotations
 import java.util.Properties
 import scala.jdk.CollectionConverters._
 import edu.stanford.nlp.sentiment.SentimentCoreAnnotations
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.Row
+import scala.concurrent.Future
+import scala.util.Success
+import scala.concurrent.ExecutionContext
 
 object TweetsConsumer {
 
-  val TOPIC_NAME = "twitter-test"
-  val MONGODB_CONNECTION_STRING = "mongodb://localhost:27017/"
-  val MONGODB_DATABASE_NAME = "TwitterTest"
+  val MONGODB_CONNECTION_STRING = AppConfig.getConfig("MONGODB_CONNECTION_STRING")
+  val MONGODB_DATABASE_NAME = AppConfig.getConfig("MONGODB_DATABASE_NAME")
+  val MONGODB_COLLECTION_NAME = AppConfig.getConfig("MONGODB_COLLECTION_NAME")
+  val KAFKA_TOPIC_NAME = AppConfig.getConfig("KAFKA_TOPIC_NAME")
+  val BLOOM_FILTER_SIZE = AppConfig.getConfig("BLOOM_FILTER_SIZE").toInt
+  val BLOOM_FILTER_NUM_HASHES = AppConfig.getConfig("BLOOM_FILTER_NUM_HASHES").toInt
 
   case class Schema(
     key: String,
@@ -33,26 +41,14 @@ object TweetsConsumer {
     timestamp: String,
     timestampType: String)
   
-  case class Tweet(
-    fullText: String,
-    plainText: String,
-    createdAtUTC: Timestamp,
-    hashTags: Seq[String],
-    latitude: Double,
-    longitude: Double,
-    country: String,
-    countryCode: String,
-    placeType: String,
-    placeName: String,
-    retweetCount: Integer
-  )
+  // Define an implicit ExecutionContext
+  implicit val ec: ExecutionContext = ExecutionContext.global
 
-  def main(args: Array[String]): Unit = {
-    // Set the system property for the logging configuration file
-    System.setProperty("log4j.configurationFile", "src/main/resources/log4j2.properties")
+  def start(): Future[Unit] = Future {
+    val bloomFilter = new BloomFilter(BLOOM_FILTER_SIZE, BLOOM_FILTER_NUM_HASHES)
 
     val conf = new SparkConf()
-      .setAppName("Twitter")
+      .setAppName("TweetsConsumer")
       .setMaster("local[*]")
       .set("spark.sql.shuffle.partitions", "2")
 
@@ -61,15 +57,14 @@ object TweetsConsumer {
       .config(conf)
       .getOrCreate()
 
-    spark.sparkContext.setLogLevel("WARN")
-
     import spark.implicits._
 
+    println("TweetsConsumer: Started.")
     val ds = spark
       .readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", TOPIC_NAME)
+      .option("subscribe", KAFKA_TOPIC_NAME)
       .load()
       .selectExpr(
         "CAST(key AS STRING)",
@@ -82,100 +77,37 @@ object TweetsConsumer {
       )
       .as[Schema]
 
-    // val ds = spark
-    //   .read
-    //   .text("data/boulder_flood_geolocated_tweets.json")
-    //   .as[String]
+    val parsedTweets = ds
+      .map(t => extractTweet(t.value))
+      .dropDuplicates("_id")
+      .filter(t => !bloomFilter.hasSeenBefore(t._id))
 
-    val parsedTweets = ds.map(t => extractTweet(t.value))
-    // val parsedTweets = ds.map(extractTweet(_))
-    // pipeline.transform(parsedTweets.select("fullText")).show(false)
-
-    // val fullData = parsedTweets
-    //   .map(t => t.copy(hashTags = t.hashTags.map(_.toLowerCase())))
-    //   .withColumn("hashTag", explode($"hashTags"))
-    //   .withColumn("city", when($"placeType" === "city", $"placeName").otherwise(""))
-    //   .withColumn("admin", when($"placeType" === "admin", $"placeName").otherwise(""))
-    //   .withColumn("neighborhood", when($"placeType" === "neighborhood", $"placeName").otherwise(""))
-    //   .drop($"hashTags", $"placeType", $"placeName")
-   
-    // val hashTagsHourly = fullData
-    //   .withColumn("createdAtHour", date_trunc("hour", $"createdAtUTC"))
-    //   .groupBy($"hashTag", $"createdAtHour")
-    //   .count()
-
-    // val hashTagsDaily = fullData
-    //   .withColumn("createdAtHour", date_trunc("day", $"createdAtUTC"))
-    //   .groupBy($"hashTag", $"createdAtHour")
-    //   .count()
-
-    val sentimentAnalyzer = new SentimentAnalyzer
-    val extractSentimentUdf = udf(
-      (text: String) => sentimentAnalyzer.extractSentiment(text)
-    )
-
+    // Initialize sentiment column with null value for analysis later
     val tweetsWithSentiment = parsedTweets
-      .withColumn("sentiment", extractSentimentUdf($"fullText"))
+      .withColumn("sentiment", lit(null))
 
     val fullDataWriteOperation = tweetsWithSentiment
       .writeStream
+      .foreachBatch((batch: Dataset[Row], batchId: Long) => {
+        batch.foreach(r => bloomFilter.setAsSeen(r.getAs[String]("id")))
+      })
       .outputMode("append")
       .format("mongodb")
-      .option("checkpointLocation", s"data/checkpoints/$TOPIC_NAME/Tweets")
+      .option("checkpointLocation", s"data/checkpoints/$KAFKA_TOPIC_NAME/Tweets")
       .option("forceDeleteTempCheckpointLocation", "true")
       .option("spark.mongodb.connection.uri", MONGODB_CONNECTION_STRING)
       .option("spark.mongodb.database", MONGODB_DATABASE_NAME)
-      .option("spark.mongodb.collection", "Tweets")
+      .option("spark.mongodb.collection", MONGODB_COLLECTION_NAME)
       .trigger(Trigger.ProcessingTime("2 seconds"))
       .start()
-    
-    // val hashTagsHourlyWriteOperation = hashTagsHourly
-    //   .writeStream
-    //   .outputMode("append")
-    //   .format("mongodb")
-    //   .option("checkpointLocation", s"data/checkpoints/$TOPIC_NAME/HashTagsHourly")
-    //   .option("forceDeleteTempCheckpointLocation", "true")
-    //   .option("spark.mongodb.connection.uri", MONGODB_CONNECTION_STRING)
-    //   .option("spark.mongodb.database", MONGODB_DATABASE_NAME)
-    //   .option("spark.mongodb.collection", "HashTagsHourly")
-    //   .option("replaceDocument", "false")
-    //   .option("operationType", "update")
-    //   .option("upsert", "true")
-    //   .trigger(Trigger.ProcessingTime("2 seconds"))
-    //   .start()
-
-    // val hashTagsDailyWriteOperation = hashTagsDaily
-    //   .writeStream
-    //   .outputMode("append")
-    //   .format("mongodb")
-    //   .option("checkpointLocation", s"data/checkpoints/$TOPIC_NAME/HashTagsDaily")
-    //   .option("forceDeleteTempCheckpointLocation", "true")
-    //   .option("spark.mongodb.connection.uri", MONGODB_CONNECTION_STRING)
-    //   .option("spark.mongodb.database", MONGODB_DATABASE_NAME)
-    //   .option("spark.mongodb.collection", "HashTagsDaily")
-    //   .option("replaceDocument", "false")
-    //   .option("operationType", "update")
-    //   .option("upsert", "true")
-    //   .trigger(Trigger.ProcessingTime("2 seconds"))
-    //   .start()
 
     fullDataWriteOperation.awaitTermination()
-    // hashTagsHourlyWriteOperation.awaitTermination()
-    // hashTagsDailyWriteOperation.awaitTermination()
-    
-    // val query = wordsCounts
-    //   .writeStream
-    //   .outputMode("update")
-    //   .format("console")
-    //   .trigger(Trigger.ProcessingTime("1 seconds"))
-    //   .start()
-
-    // query.awaitTermination()
   }
 
   def extractTweet(value: String): Tweet = {
     import ujson._
     val parsedJson = ujson.read(value)
+    val id = parsedJson("id_str").str
     val fullTweet = parsedJson("text").str
     val retweetCount = parsedJson("retweet_count").num.toInt
 
@@ -245,6 +177,7 @@ object TweetsConsumer {
     userMentions.foreach(u => textOnly = textOnly.replaceAll(s"@$u", ""))
 
     Tweet(
+      id,
       fullTweet,
       textOnly,
       createdAt,
