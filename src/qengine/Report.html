@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Report</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      #map {
+        height: 400px;
+      }
+      .chart-container {
+        width: 50%;
+        margin: auto;
+      }
+      .grid-container {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr); /* 3 columns of equal width */
+        grid-gap: 10px; /* Gap between grid items */
+        padding: 10px;
+      }
+      .grid-item {
+        background-color: #f2f2f2;
+        border: 1px solid #ccc;
+        padding: 20px;
+        text-align: center;
+        height: 400px;
+      }
+    </style>
+  </head>
+  <body>
+    <label for="keyword">Keyword:</label>
+    <input type="text" name="keyword" id="keyword-input" />
+    <button type="button" onclick="fetchData()">GO</button>
+    <input type="checkbox" name="auto-refresh" id="autoRefresh" />
+    <label for="auto-refresh">Auto Refresh</label>
+    <div class="grid-container">
+      <div id="map"></div>
+      <div class="grid-item">
+        <canvas id="hourly-tweets-trend"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="daily-tweets-trend"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="hourly-hashtags-trend"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="daily-hashtags-trend"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="sentiment-gauge"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="tweets-per-country"></canvas>
+      </div>
+      <div class="grid-item">
+        <canvas id="hashtags-per-country"></canvas>
+      </div>
+    </div>
+
+    <script>
+      // Register the gauge controller
+      //   Chart.register(window.ChartGauge);
+
+      // Initialize the map
+      const markers = L.layerGroup([]);
+      const tileLayer = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution: "&copy; OpenStreetMap contributors",
+        }
+      );
+      const map = L.map("map", {
+        center: [51.505, -0.09],
+        zoom: 1,
+        layers: [tileLayer, markers],
+      });
+
+      //   Chart.register(/*ChartGauge.GaugeController*/ ...registerables);
+      function getRandomRgbColor(alpha) {
+        return `rgba(${getRandomRgbValue()}, ${getRandomRgbValue()}, ${getRandomRgbValue()}, ${alpha})`;
+      }
+
+      function getRandomRgbValue() {
+        return Math.floor(Math.random() * 1000) % 256;
+      }
+
+      let charts = [];
+
+      function fetchData() {
+        keyword = encodeURIComponent(
+          (document.getElementById("keyword-input").value || "").trim()
+        );
+
+        charts.forEach((c) => c.destroy());
+        charts = [];
+
+        // Fetch data from API and update map
+        fetch(`/metrics/locations/?keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            markers.clearLayers();
+            data.forEach((point) => {
+              L.marker([point.latitude, point.longitude])
+                .addTo(markers)
+                .bindPopup(point.name);
+            });
+          });
+
+        // Fetch data from API and update trend graph
+        fetch(`/metrics/tweetstrend/?unit=hour&keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            var ctx = document
+              .getElementById("hourly-tweets-trend")
+              .getContext("2d");
+            charts.push(
+              new Chart(ctx, {
+                type: "line",
+                data: {
+                  labels: data.map((d) => d.time),
+                  datasets: [
+                    {
+                      label: "Tweets trend by hour",
+                      data: data.map((d) => d.count),
+                      borderColor: "rgba(75, 192, 192, 1)",
+                      borderWidth: 1,
+                    },
+                  ],
+                },
+                options: {
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                    },
+                  },
+                },
+              })
+            );
+          });
+
+        fetch(`/metrics/tweetstrend/?unit=day&keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            var ctx = document
+              .getElementById("daily-tweets-trend")
+              .getContext("2d");
+            charts.push(
+              new Chart(ctx, {
+                type: "line",
+                data: {
+                  labels: data.map((d) => d.time),
+                  datasets: [
+                    {
+                      label: "Tweets trend by day",
+                      data: data.map((d) => d.count),
+                      borderColor: "rgba(75, 192, 192, 1)",
+                      borderWidth: 1,
+                    },
+                  ],
+                },
+                options: {
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                    },
+                  },
+                },
+              })
+            );
+          });
+
+        fetch(`/metrics/hashtagstrend/?unit=hour&keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            var ctx = document
+              .getElementById("hourly-hashtags-trend")
+              .getContext("2d");
+            charts.push(
+              new Chart(ctx, {
+                type: "line",
+                data: {
+                  labels: data.map((d) => d.time),
+                  datasets: [
+                    {
+                      label: "Hashtags trend by hour",
+                      data: data.map((d) => d.count),
+                      borderColor: "rgba(75, 192, 192, 1)",
+                      borderWidth: 1,
+                    },
+                  ],
+                },
+                options: {
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                    },
+                  },
+                },
+              })
+            );
+          });
+
+        fetch(`/metrics/hashtagstrend/?unit=day&keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            var ctx = document
+              .getElementById("daily-hashtags-trend")
+              .getContext("2d");
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            charts.push(
+              new Chart(ctx, {
+                type: "line",
+                data: {
+                  labels: data.map((d) => d.time),
+                  datasets: [
+                    {
+                      label: "Hashtags trend by day",
+                      data: data.map((d) => d.count),
+                      borderColor: "rgba(75, 192, 192, 1)",
+                      borderWidth: 1,
+                    },
+                  ],
+                },
+                options: {
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                    },
+                  },
+                },
+              })
+            );
+          });
+
+        fetch(`/metrics/sentiment/?keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            const values = [
+              data.filter((d) => d.sentiment === -1).length,
+              data.filter((d) => d.sentiment === 0).length,
+              data.filter((d) => d.sentiment === 1).length,
+            ];
+            const config = {
+              type: "doughnut",
+              data: {
+                labels: ["Negative", "Neutral", "Positive"],
+                datasets: [
+                  {
+                    label: "Sentiment",
+                    data: values,
+                    backgroundColor: ["red", "orange", "green"],
+                  },
+                ],
+              },
+              options: {
+                aspectRatio: 2,
+                circumference: 180,
+                rotation: -90,
+                plugins: {
+                  legend: { position: "bottom" },
+                  title: {
+                    display: true,
+                    text: "Sentiment",
+                  },
+                },
+              },
+            };
+            var ctx = document
+              .getElementById("sentiment-gauge")
+              .getContext("2d");
+            charts.push(new Chart(ctx, config));
+          });
+
+        fetch(`/metrics/tweetsbycountry/?keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            const config = {
+              type: "pie",
+              data: {
+                labels: data.map((d) => d.country),
+                datasets: [
+                  {
+                    label: "Country",
+                    data: data.map((d) => d.count),
+                    backgroundColor: data.map((_) => getRandomRgbColor(0.2)),
+                    borderColor: data.map((_) => getRandomRgbColor(0.2)),
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: "left",
+                    title: { display: true, text: "Country" },
+                  },
+                  title: { display: true, text: "Tweets By Country" },
+                },
+              },
+            };
+            var ctx = document
+              .getElementById("tweets-per-country")
+              .getContext("2d");
+            charts.push(new Chart(ctx, config));
+          });
+
+        fetch(`/metrics/hashtagsbycountry/?keyword=${keyword}`)
+          .then((response) => response.json())
+          .then((data) => {
+            const config = {
+              type: "pie",
+              data: {
+                labels: data.map((d) => d.country),
+                datasets: [
+                  {
+                    label: "Country",
+                    data: data.map((d) => d.count),
+                    backgroundColor: data.map((_) => getRandomRgbColor(0.2)),
+                    borderColor: data.map((_) => getRandomRgbColor(0.2)),
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: "left",
+                    title: { display: true, text: "Country" },
+                  },
+                  title: { display: true, text: "Hashtags By Country" },
+                },
+              },
+            };
+            var ctx = document
+              .getElementById("hashtags-per-country")
+              .getContext("2d");
+            charts.push(new Chart(ctx, config));
+          });
+      }
+
+      fetchData();
+
+      // Refresh data every 30 seconds
+      setInterval(() => {
+        document.getElementById("autoRefresh").checked && fetchData();
+      }, 30000);
+    </script>
+  </body>
+</html>

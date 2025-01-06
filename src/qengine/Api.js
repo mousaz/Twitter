@@ -2,6 +2,8 @@ const http = require("http");
 const url = require("url");
 const querystring = require("querystring");
 const MongoDBClient = require("./MongoDBClient");
+const fs = require("fs");
+const path = require("path");
 const Metrics = require("./Metrics");
 
 const PORT = 9999;
@@ -12,6 +14,11 @@ const dbClient = new MongoDBClient();
 const server = http.createServer((req, res) => {
   logger.log(`Request received: ${req.url}`);
   const reqUrl = url.parse(req.url);
+
+  if (reqUrl.pathname === "/Report") {
+    return res.end(fs.readFileSync(path.join(__dirname, "Report.html")));
+  }
+
   const qParams = querystring.parse(reqUrl.query);
   const matches = reqUrl.pathname.match(/^\/metrics\/(.*)\/$/);
   if (!matches || matches.length < 2) {
@@ -29,7 +36,10 @@ const server = http.createServer((req, res) => {
 
   dbClient
     .runQuery(query)
-    .then((result) => res.end(JSON.stringify(result)))
+    .then((result) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    })
     .catch((err) => {
       logger.error(`Query execution failed with Error: ${err}`);
       res.writeHead(500);
