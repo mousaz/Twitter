@@ -5,7 +5,6 @@ import java.sql.Timestamp
 final case class Tweet(
   _id: String,
   fullText: String,
-  plainText: String,
   createdAtUTC: Timestamp,
   hashTags: Seq[String],
   latitude: Double,

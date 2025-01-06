@@ -24,7 +24,7 @@ module.exports = {
     }
 
     pipeline.push({
-      $group: { _id: null, sentiment: { $avg: "$sentiment" } },
+      $project: { sentiment: true },
     });
 
     return pipeline;

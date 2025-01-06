@@ -170,16 +170,9 @@ object TweetsConsumer {
       )
       .toSeq
 
-    var textOnly = fullTweet
-    hashTags.foreach(h => textOnly = textOnly.replaceAll(s"#$h", ""))
-    symbols.foreach(s => textOnly = textOnly.replaceAll(s"$$$s", ""))
-    urls.foreach(u => textOnly = textOnly.replaceAll(s"$u", ""))
-    userMentions.foreach(u => textOnly = textOnly.replaceAll(s"@$u", ""))
-
     Tweet(
       id,
       fullTweet,
-      textOnly,
       createdAt,
       hashTags,
       latitude,
